@@ -53,7 +53,7 @@ installation is required**. Windows 64-bit only.
 pip install hid
 
 # 2) clone
-git clone https://github.com/<your-name>/QK100-Keyboard-Time-Sync.git
+git clone https://github.com/fruityman/QK100-Keyboard-Time-Sync.git
 cd QK100-Keyboard-Time-Sync/src
 
 # 3) preview the bytes WITHOUT sending (safe dry-run)
@@ -190,7 +190,7 @@ zip 内自带 Python 运行时（含 tkinter + hid），**无需安装**。仅�
 pip install hid
 
 # 2) 克隆
-git clone https://github.com/<your-name>/QK100-Keyboard-Time-Sync.git
+git clone https://github.com/fruityman/QK100-Keyboard-Time-Sync.git
 cd QK100-Keyboard-Time-Sync/src
 
 # 3) 干跑预览，不发送（安全）

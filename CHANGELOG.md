@@ -22,4 +22,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Protocol documentation (`docs/protocol.md`) and frida capture archive.
   协议文档与抓包存档。
 
-[1.0.0]: https://github.com/<your-name>/QK100-Keyboard-Time-Sync/releases/tag/v1.0.0
+[1.0.0]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.0.0
