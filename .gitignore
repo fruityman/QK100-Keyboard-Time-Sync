@@ -1,0 +1,39 @@
+# ============================================================
+# QK100-Keyboard-Time-Sync  .gitignore
+# ============================================================
+
+# ---- 便携版构建产物 / build artifacts (不进仓库, 走 Release) ----
+portable_build/
+*.zip
+runtime/
+
+# ---- 运行期生成文件 / runtime-generated files ----
+*.log
+time_sync_schedule.json
+
+# ---- Python 缓存 / Python caches ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/_work/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---- 编辑器 / IDE ----
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---- 操作系统 / OS ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- CodeBuddy 工作数据 ----
+.codebuddy/
