@@ -5,6 +5,20 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.0.1] - 2026-06-30
+
+### Fixed / 修复
+- Portable build no longer garbles Chinese characters in the bundled Python
+  scripts. The build script (`build/build_portable.ps1`) previously read the
+  UTF-8 sources via `Get-Content -Raw` (decoded as GBK on Chinese Windows) and
+  wrote them back with `Set-Content -Encoding utf8` (added a BOM), corrupting
+  all Chinese text and breaking the scripts at runtime. It now reads/writes all
+  generated files (py / bat / txt) as UTF-8 **without BOM**.
+  修复便携版打包后 `app/` 内 Python 脚本中文乱码导致脚本无法运行的问题：
+  构建脚本原先用 `Get-Content -Raw`（中文系统按 GBK 误解码）读取 UTF-8 源文件，
+  再用 `Set-Content -Encoding utf8`（写入 BOM）写回，导致中文全部损坏。现统一
+  以 **UTF-8 无 BOM** 读写所有生成文件（py / bat / txt）。
+
 ## [1.0.0] - 2026-06-26
 
 ### Added / 新增
@@ -22,4 +36,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Protocol documentation (`docs/protocol.md`) and frida capture archive.
   协议文档与抓包存档。
 
+[1.0.1]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.0.1
 [1.0.0]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.0.0
