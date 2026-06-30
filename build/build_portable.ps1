@@ -45,6 +45,11 @@ function Info($m) { Write-Host "[build] $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "[ ok  ] $m" -ForegroundColor Green }
 function Die($m)  { Write-Host "[fail ] $m" -ForegroundColor Red; exit 1 }
 
+# UTF-8 无 BOM 读写助手 (跨 PS 5.1/7 一致, 避免中文按 GBK 误解码或写入 BOM)
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+function Read-Utf8($path)  { [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8) }
+function Write-Utf8($path, $text) { [System.IO.File]::WriteAllText($path, $text, $Utf8NoBom) }
+
 # ---- 路径准备 / paths ------------------------------------------------------
 $RepoRoot = Split-Path -Parent $PSScriptRoot          # build/ 的上级 = 仓库根
 $SrcDir   = Join-Path $RepoRoot "src"
@@ -134,7 +139,7 @@ if (Test-Path (Join-Path $DocsDir "capture_packets.txt")) {
 
 # 5a) time_sync_hid.py : LOG_PATH -> 便携包根目录 (app/ 的上级)
 $hidApp = Join-Path $App "time_sync_hid.py"
-$c = Get-Content $hidApp -Raw
+$c = Read-Utf8 $hidApp
 $old = 'LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "time_sync.log")'
 $new = @'
 # 便携版: 日志写到便携包根目录 (app/ 的上级), 方便用户直接查看。
@@ -142,12 +147,12 @@ _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 _PORTABLE_ROOT = os.path.dirname(_APP_DIR)
 LOG_PATH = os.path.join(_PORTABLE_ROOT, "time_sync.log")
 '@
-if ($c.Contains($old)) { $c = $c.Replace($old, $new); Set-Content $hidApp $c -Encoding utf8; Ok "已改写 app/time_sync_hid.py 日志路径" }
+if ($c.Contains($old)) { $c = $c.Replace($old, $new); Write-Utf8 $hidApp $c; Ok "已改写 app/time_sync_hid.py 日志路径" }
 else { Info "time_sync_hid.py 未匹配到原始 LOG_PATH 行 (可能已改), 跳过" }
 
 # 5b) time_sync_config_gui.py : CONFIG / LOG_PATH -> 便携包根目录 (逐行稳健替换)
 $guiApp = Join-Path $App "time_sync_config_gui.py"
-$g = Get-Content $guiApp -Raw
+$g = Read-Utf8 $guiApp
 $changed = $false
 # 在 HERE 定义行后插入 PORTABLE_ROOT (仅插一次)
 $hereLine = 'HERE = os.path.dirname(os.path.abspath(__file__))'
@@ -161,7 +166,7 @@ if ($g.Contains($cfgOld)) { $g = $g.Replace($cfgOld, $cfgNew); $changed = $true 
 $logOld = 'LOG_PATH = os.path.join(HERE, "time_sync.log")'
 $logNew = 'LOG_PATH = os.path.join(PORTABLE_ROOT, "time_sync.log")'
 if ($g.Contains($logOld)) { $g = $g.Replace($logOld, $logNew); $changed = $true }
-if ($changed) { Set-Content $guiApp $g -Encoding utf8; Ok "已改写 app/time_sync_config_gui.py 配置/日志路径" }
+if ($changed) { Write-Utf8 $guiApp $g; Ok "已改写 app/time_sync_config_gui.py 配置/日志路径" }
 else { Info "time_sync_config_gui.py 未匹配到路径行 (可能已改), 跳过" }
 
 # ---- 6) 生成便携版启动 bat 与使用说明 --------------------------------------
@@ -184,7 +189,7 @@ echo ------------------------------------------------------------
 echo.
 pause
 '@
-Set-Content -Path (Join-Path $Pkg "校时一次.bat") -Value $batSync -Encoding utf8
+Write-Utf8 (Join-Path $Pkg "校时一次.bat") $batSync
 
 $batGui = @'
 @echo off
@@ -197,7 +202,7 @@ set "TK_LIBRARY=%~dp0runtime\tcl\tk8.6"
 rem 用 pythonw.exe 启动 GUI, 无黑窗。
 start "" "%~dp0runtime\pythonw.exe" "%~dp0app\time_sync_config_gui.py"
 '@
-Set-Content -Path (Join-Path $Pkg "打开配置.bat") -Value $batGui -Encoding utf8
+Write-Utf8 (Join-Path $Pkg "打开配置.bat") $batGui
 
 $readme = @'
 ============================================================
@@ -271,7 +276,7 @@ A: 不能。本便携版自带的是 64 位 Python 运行时，需 64 位 Window
 ------------------------------------------------------------
   QK100 键盘 (VID=05AC, PID=024F, 命令通道 MI_03 / usage_page=0xFF13)
 '@
-Set-Content -Path (Join-Path $Pkg "使用说明.txt") -Value $readme -Encoding utf8
+Write-Utf8 (Join-Path $Pkg "使用说明.txt") $readme
 Ok "便携版 bat 与使用说明已生成"
 
 # ---- 7) 压缩成单个 zip ------------------------------------------------------
