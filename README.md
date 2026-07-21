@@ -98,10 +98,11 @@ Scheduled Task. The GUI (`打开配置.bat` / `time_sync_config_gui.py`) lets yo
 > **Sync now** to restore current time. This verifies the full write+restore path.
 
 Scheduled tasks run `pythonw.exe time_sync_hid.py --quiet` — no console window,
-~1–2 s, and nothing stays resident (zero idle overhead). Boot sync uses an
-`ONLOGON` task (30 s delayed); wake sync uses an `ONEVENT` task bound to the power
-resume event (Power-Troubleshooter EventID 1). Every run records its trigger
-source in `time_sync.log`.
+~1–2 s, and nothing stays resident (zero idle overhead). Boot sync uses a
+per-user startup entry under `HKCU\...\Run` (**no administrator rights needed**,
+runs silently at logon); wake sync uses an `ONEVENT` scheduled task bound to the
+power resume event (Power-Troubleshooter EventID 1). Every run records its
+trigger source in `time_sync.log`.
 
 ### Building the portable zip yourself
 
@@ -241,8 +242,9 @@ python time_sync_hid.py --send --backend ctypes
 > 时间，即可完整验证「能写入 + 能恢复」整条链路。
 
 定时任务以 `pythonw.exe time_sync_hid.py --quiet` 运行——无黑窗、约 1–2 秒、不驻留
-（平时零开销）。开机校时用 `ONLOGON` 任务（延迟 30 秒）；唤醒校时用 `ONEVENT` 任务绑定
-电源恢复事件（Power-Troubleshooter 事件 ID 1）。每次运行都会在 `time_sync.log` 记录触发来源。
+（平时零开销）。开机校时写入当前用户启动项 `HKCU\...\Run`（**无需管理员权限**，登录时
+静默运行）；唤醒校时用 `ONEVENT` 计划任务绑定电源恢复事件（Power-Troubleshooter 事件
+ID 1）。每次运行都会在 `time_sync.log` 记录触发来源。
 
 ### 自己构建便携版 zip
 

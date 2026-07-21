@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import json
+import winreg
 import subprocess
 import datetime
 import tkinter as tk
@@ -39,6 +40,13 @@ LOG_PATH = os.path.join(HERE, "time_sync.log")
 # 开机/唤醒校时任务名 (固定, 各一个)
 TASK_BOOT = TASK_PREFIX + "OnLogon"   # 每天开机登录后触发
 TASK_WAKE = TASK_PREFIX + "OnWake"    # 从睡眠/休眠唤醒后触发
+
+# 开机校时改用「当前用户登录启动项」实现 (HKCU Run), 无需管理员权限。
+# 说明: 计划任务的 ONLOGON / ONSTART 触发器属于机器级触发, 在受控/域环境下
+# 非管理员账户注册会被拒绝 (ERROR: Access is denied); 而 HKCU Run 是纯当前用户
+# 作用域, 任何账户都可写, 登录时自动运行, 配合 --once-per-day 保证每天最多一次。
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+BOOT_RUN_NAME = TASK_BOOT              # 启动项值名, 沿用同一名字便于识别
 
 
 # ----------------------------------------------------------------------------
@@ -150,13 +158,52 @@ def create_task(hhmm):
     return rc == 0, out.strip()
 
 
+def _boot_run_command():
+    """开机校时启动项的命令行 (静默 + 标记来源 boot + 当天去重)。"""
+    return f'"{PYTHONW}" "{SCRIPT}" --quiet --source boot --once-per-day'
+
+
 def create_boot_task():
-    """创建"开机/登录后校时"任务 (ONLOGON, 延迟 30 秒待设备就绪, 当天去重)。"""
-    tr = f'"{PYTHONW}" "{SCRIPT}" --quiet --source boot --once-per-day'
-    cmd = ["schtasks", "/Create", "/TN", TASK_BOOT, "/TR", tr,
-           "/SC", "ONLOGON", "/DELAY", "0000:30", "/F"]
-    rc, out = _run(cmd)
-    return rc == 0, out.strip()
+    """
+    启用"开机/登录后校时": 写入当前用户登录启动项 (HKCU Run)。
+    不使用计划任务的 ONLOGON 触发器 —— 后者在非管理员/受控环境下会被拒
+    (ERROR: Access is denied)。HKCU Run 无需管理员, 登录即运行。返回 (ok, msg)。
+    """
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                            winreg.KEY_SET_VALUE) as k:
+            winreg.SetValueEx(k, BOOT_RUN_NAME, 0, winreg.REG_SZ,
+                              _boot_run_command())
+        return True, "已写入登录启动项 (HKCU Run)"
+    except Exception as e:
+        return False, str(e)
+
+
+def delete_boot_task():
+    """移除开机校时登录启动项。不存在也视为成功。返回 (ok, msg)。"""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                            winreg.KEY_SET_VALUE) as k:
+            winreg.DeleteValue(k, BOOT_RUN_NAME)
+        return True, "已移除登录启动项"
+    except FileNotFoundError:
+        return True, "启动项不存在"
+    except OSError:
+        # 值不存在时 DeleteValue 抛 OSError(2), 同样视为已移除
+        return True, "启动项不存在"
+    except Exception as e:
+        return False, str(e)
+
+
+def boot_task_exists():
+    """开机校时是否已启用 (登录启动项是否存在)。"""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
+                            winreg.KEY_QUERY_VALUE) as k:
+            winreg.QueryValueEx(k, BOOT_RUN_NAME)
+        return True
+    except Exception:
+        return False
 
 
 def create_wake_task():
@@ -188,6 +235,9 @@ def delete_all_tasks():
     for name in list_existing_tasks():
         ok, m = delete_task(name)
         msgs.append(f"{'OK' if ok else 'FAIL'} {name}: {m}")
+    # 一并移除开机校时登录启动项
+    okb, mb = delete_boot_task()
+    msgs.append(f"{'OK' if okb else 'FAIL'} 登录启动项: {mb}")
     return msgs
 
 
@@ -210,14 +260,22 @@ def apply_schedule(enabled, times, boot_sync=True):
             logs.append(f"创建 {hhmm}: {'成功' if ok else '失败 '+m}")
     else:
         logs.append("每日定时校时已关闭, 未创建时间点任务。")
-    # 3) 开机/唤醒校时任务
+    # 3) 开机/唤醒校时
     if boot_sync:
+        # 开机: 用登录启动项 (HKCU Run, 非管理员可用)
         ok1, m1 = create_boot_task()
-        logs.append(f"开机校时任务: {'成功' if ok1 else '失败 '+m1}")
+        logs.append(f"开机校时(登录启动项): {'成功' if ok1 else '失败 '+m1}")
+        # 清理可能残留的旧版 ONLOGON 计划任务 (老版本或管理员环境下创建的)
+        if task_exists(TASK_BOOT):
+            delete_task(TASK_BOOT)
+            logs.append(f"已清理旧版计划任务 {TASK_BOOT}")
+        # 唤醒: 仍用 ONEVENT 计划任务 (当前用户上下文, 无需管理员)
         ok2, m2 = create_wake_task()
         logs.append(f"唤醒校时任务: {'成功' if ok2 else '失败 '+m2}")
     else:
-        for name in (TASK_BOOT, TASK_WAKE):
+        okb, mb = delete_boot_task()
+        logs.append(f"移除开机校时启动项: {'成功' if okb else '失败 '+mb}")
+        for name in (TASK_BOOT, TASK_WAKE):   # 顺便清理计划任务残留
             if task_exists(name):
                 ok, m = delete_task(name)
                 logs.append(f"移除 {name}: {'成功' if ok else '失败 '+m}")
@@ -422,7 +480,7 @@ class App(tk.Tk):
 
     def _refresh_status(self):
         daily = list_daily_tasks()
-        boot_on = task_exists(TASK_BOOT)
+        boot_on = boot_task_exists()          # 开机校时 = 登录启动项是否存在
         wake_on = task_exists(TASK_WAKE)
         parts = []
         if daily:

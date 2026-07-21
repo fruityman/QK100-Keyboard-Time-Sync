@@ -5,6 +5,24 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.1] - 2026-07-21
+
+### Fixed / 修复
+- Boot auto-sync failed with `ERROR: Access is denied.` on managed/domain
+  machines for non-admin users. The logon task previously used a scheduled task
+  with an `ONLOGON` trigger, which is a machine-level trigger and cannot be
+  registered without administrator rights (wake/`ONEVENT` and daily/`DAILY`
+  tasks run in the user context and were unaffected). Boot sync now uses a
+  per-user startup entry under `HKCU\...\Run` instead — no admin required, runs
+  `pythonw` silently at logon, and still de-duplicated via `--once-per-day`.
+  Applying settings also cleans up any leftover legacy `ONLOGON` task.
+  修复受控/域环境下非管理员账户开机校时报 `ERROR: Access is denied.` 的问题：
+  开机任务原先用 `ONLOGON` 触发器的计划任务，而该触发器属于机器级触发，非管理员
+  无权注册（唤醒 `ONEVENT`、每日 `DAILY` 任务运行于用户上下文，不受影响）。开机
+  校时改为写入当前用户启动项 `HKCU\...\Run` —— 无需管理员，登录时静默运行
+  `pythonw`，仍通过 `--once-per-day` 保证每天最多一次。应用设置时会顺带清理残留的
+  旧版 `ONLOGON` 计划任务。
+
 ## [1.1.0] - 2026-07-21
 
 ### Added / 新增
@@ -52,6 +70,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Protocol documentation (`docs/protocol.md`) and frida capture archive.
   协议文档与抓包存档。
 
+[1.1.1]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.1.1
 [1.1.0]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.1.0
 [1.0.1]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.0.1
 [1.0.0]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.0.0
