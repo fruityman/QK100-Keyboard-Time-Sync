@@ -31,7 +31,7 @@ The protocol was reverse-engineered via passive frida capture. See
 
 #### Option A — Portable (no Python needed) ⭐ recommended for end users
 
-Download `QK100时间校正-便携版.zip` from the
+Download `QK100-Time-Sync-v1.1.0.zip` from the
 [**Releases**](../../releases) page, unzip anywhere, and double-click:
 
 | File | Action |
@@ -77,6 +77,8 @@ Or just double-click `src/run_time_sync.bat` (sync once) /
 | `--time "YYYY-MM-DD HH:MM:SS"` | Write a specific time (e.g. to verify the screen changes) |
 | `--gap 0.012` | Seconds between commands (official ~12 ms) |
 | `--quiet` | Silent mode for scheduled tasks (implies `--send`, no countdown) |
+| `--source <tag>` | Tag the log entry with the trigger source: `schedule` (default) / `boot` / `wake` / `manual` |
+| `--once-per-day` | Skip if already synced successfully today (used by boot/wake tasks, guarantees at most one sync per day) |
 | `--no-readback` | Disable write-then-read-back handshake (**not recommended** — commands won't take effect) |
 
 ### Auto-sync (GUI)
@@ -85,6 +87,9 @@ Because this method needs no screen interaction, it can run safely as a Windows
 Scheduled Task. The GUI (`打开配置.bat` / `time_sync_config_gui.py`) lets you:
 
 - toggle daily auto-sync on/off and add multiple time points (e.g. `09:00`, `18:00`);
+- toggle **auto-sync on boot / wake** — sync once after the first logon of the day
+  or after resuming from sleep/hibernate. **Enabled by default**, de-duplicated per
+  day (at most one sync per day);
 - **Apply** to write the schedule into Windows Task Scheduler;
 - **Sync now** instantly; **Test** by writing `2020-01-01 08:30:00` so you can
   confirm the screen jumps; **Refresh / View log**.
@@ -93,7 +98,10 @@ Scheduled Task. The GUI (`打开配置.bat` / `time_sync_config_gui.py`) lets yo
 > **Sync now** to restore current time. This verifies the full write+restore path.
 
 Scheduled tasks run `pythonw.exe time_sync_hid.py --quiet` — no console window,
-~1–2 s, and nothing stays resident (zero idle overhead).
+~1–2 s, and nothing stays resident (zero idle overhead). Boot sync uses an
+`ONLOGON` task (30 s delayed); wake sync uses an `ONEVENT` task bound to the power
+resume event (Power-Troubleshooter EventID 1). Every run records its trigger
+source in `time_sync.log`.
 
 ### Building the portable zip yourself
 
@@ -170,7 +178,7 @@ QK100-Keyboard-Time-Sync/
 
 #### 方式 A — 便携版（无需 Python）⭐ 推荐给普通用户
 
-在 [**Releases**](../../releases) 页面下载 `QK100时间校正-便携版.zip`，
+在 [**Releases**](../../releases) 页面下载 `QK100-Time-Sync-v1.1.0.zip`，
 解压到任意位置，然后双击：
 
 | 文件 | 作用 |
@@ -213,6 +221,8 @@ python time_sync_hid.py --send --backend ctypes
 | `--time "YYYY-MM-DD HH:MM:SS"` | 写入指定时间（如用于验证屏幕跳变） |
 | `--gap 0.012` | 相邻命令间隔秒数（官方约 12 ms） |
 | `--quiet` | 定时任务用的静默模式（隐含 `--send`，无倒计时） |
+| `--source <标记>` | 在日志中标记触发来源：`schedule`（默认）/ `boot` / `wake` / `manual` |
+| `--once-per-day` | 当天已成功校时则跳过（供开机/唤醒任务调用，保证每天最多一次） |
 | `--no-readback` | 关闭写后读回握手（**不建议**，关掉后命令不生效） |
 
 ### 自动校时（图形工具）
@@ -221,6 +231,8 @@ python time_sync_hid.py --send --backend ctypes
 （`打开配置.bat` / `time_sync_config_gui.py`）可以：
 
 - 开关每日自动校时，并添加多个时间点（如 `09:00`、`18:00`）；
+- 开关**开机 / 唤醒自动校时**——每天第一次开机（登录）后或从睡眠/休眠唤醒后自动校时
+  一次。**默认开启**，当天去重（每天最多一次）；
 - 点「应用设置」把配置写入 Windows 计划任务；
 - 「立即校时一次」即时校准；「测试」写入 `2020-01-01 08:30:00` 用于确认屏幕跳变；
   「刷新状态 / 查看日志」。
@@ -229,7 +241,8 @@ python time_sync_hid.py --send --backend ctypes
 > 时间，即可完整验证「能写入 + 能恢复」整条链路。
 
 定时任务以 `pythonw.exe time_sync_hid.py --quiet` 运行——无黑窗、约 1–2 秒、不驻留
-（平时零开销）。
+（平时零开销）。开机校时用 `ONLOGON` 任务（延迟 30 秒）；唤醒校时用 `ONEVENT` 任务绑定
+电源恢复事件（Power-Troubleshooter 事件 ID 1）。每次运行都会在 `time_sync.log` 记录触发来源。
 
 ### 自己构建便携版 zip
 
