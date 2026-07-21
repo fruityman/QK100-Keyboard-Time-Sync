@@ -10,6 +10,7 @@ runtime/
 # ---- 运行期生成文件 / runtime-generated files ----
 *.log
 time_sync_schedule.json
+.last_sync_date
 
 # ---- Python 缓存 / Python caches ----
 __pycache__/

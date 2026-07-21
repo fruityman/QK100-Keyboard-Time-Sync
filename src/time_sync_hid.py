@@ -131,15 +131,61 @@ def hexs(b):
 
 
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "time_sync.log")
+# 当天去重标记文件: 记录最近一次成功校时的日期 (YYYY-MM-DD)。
+STAMP_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".last_sync_date")
+
+# 来源标记 -> 日志中显示的中文说明
+_SOURCE_LABELS = {
+    "schedule": "定时校时",
+    "boot": "开机校时",
+    "wake": "唤醒校时",
+    "manual": "手动校时",
+}
 
 
-def _log_result(quiet, dt, ok, err):
+def _source_label(source):
+    return _SOURCE_LABELS.get(source, "静默校时")
+
+
+def _already_synced_today():
+    """若今日已成功校时过, 返回 True。用于开机/唤醒任务当天去重。"""
+    try:
+        if not os.path.exists(STAMP_PATH):
+            return False
+        with open(STAMP_PATH, "r", encoding="utf-8") as f:
+            last = f.read().strip()
+        return last == datetime.date.today().isoformat()
+    except Exception:
+        return False
+
+
+def _mark_synced_today():
+    """记录今日已校时 (写入日期戳文件)。"""
+    try:
+        with open(STAMP_PATH, "w", encoding="utf-8") as f:
+            f.write(datetime.date.today().isoformat())
+    except Exception:
+        pass
+
+
+def _log_skipped(source):
+    """当天去重命中时, 记录一条跳过日志。"""
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{stamp}] {_source_label(source)}({source}) -> 今日已校时, 跳过\n")
+    except Exception:
+        pass
+
+
+def _log_result(quiet, dt, ok, err, source="schedule"):
     """静默模式把每次校时结果追加写入 time_sync.log。"""
     try:
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             status = "成功" if ok else f"失败({err})"
-            f.write(f"[{stamp}] 静默校时 -> 写入 {dt:%Y-%m-%d %H:%M:%S} : {status}\n")
+            f.write(f"[{stamp}] {_source_label(source)}({source}) -> "
+                    f"写入 {dt:%Y-%m-%d %H:%M:%S} : {status}\n")
     except Exception:
         pass
 
@@ -279,9 +325,20 @@ def main():
     ap.add_argument("--quiet", action="store_true",
                     help="静默模式(供计划任务调用): 跳过 3 秒倒计时和交互提示,"
                          "结果写入 time_sync.log。隐含 --send。")
+    ap.add_argument("--source", dest="source", default="schedule",
+                    help="校时来源标记, 写入日志用于区分触发方式: "
+                         "schedule=每日定时(默认), boot=开机/登录, wake=睡眠唤醒, manual=手动。")
+    ap.add_argument("--once-per-day", action="store_true",
+                    help="当天去重: 若今日已成功校时过则直接跳过 (供开机/唤醒任务调用, "
+                         "保证一天最多触发一次)。")
     args = ap.parse_args()
     if args.quiet:
         args.send = True
+
+    # 当天去重: 开机与唤醒可能在同一天各触发一次, 用日期戳文件保证一天只校一次。
+    if args.once_per_day and _already_synced_today():
+        _log_skipped(args.source)
+        return 0
 
     if args.time_str:
         try:
@@ -354,7 +411,7 @@ def main():
         ok_all = True
     except Exception as e:
         print(f"[发送出错] {e}")
-        _log_result(args.quiet, now, False, str(e))
+        _log_result(args.quiet, now, False, str(e), args.source)
         return 1
     finally:
         if h is not None:
@@ -364,7 +421,9 @@ def main():
                 pass
 
     if args.quiet:
-        _log_result(args.quiet, now, ok_all, "")
+        _log_result(args.quiet, now, ok_all, "", args.source)
+        if ok_all:
+            _mark_synced_today()   # 记录当天已校时, 供开机/唤醒去重
         return 0
 
     print("\n" + "!" * 64)

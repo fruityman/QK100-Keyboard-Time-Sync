@@ -5,6 +5,22 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.0] - 2026-07-21
+
+### Added / 新增
+- Auto time-sync on boot / wake: the config GUI can now register two extra
+  scheduled tasks — one on logon (`ONLOGON`, 30s delayed) and one on resume
+  from sleep/hibernate (`ONEVENT`, Power-Troubleshooter EventID 1). Controlled
+  by a new checkbox, **enabled by default**. A once-per-day guard
+  (`.last_sync_date` stamp + `--once-per-day`) ensures at most one sync per day.
+  开机 / 唤醒后自动校时: 配置工具新增两个计划任务 —— 开机登录后 (`ONLOGON`,
+  延迟 30 秒) 和从睡眠/休眠唤醒后 (`ONEVENT`, 电源恢复事件 ID 1) 各触发一次。
+  由新增的勾选框控制, **默认开启**。通过当天日期戳 (`--once-per-day`) 去重,
+  保证每天最多校时一次。
+- Log entries now record the trigger source (`schedule` / `boot` / `wake` /
+  `manual`) for easier troubleshooting.
+  日志新增来源标记 (定时 / 开机 / 唤醒 / 手动), 便于排查。
+
 ## [1.0.1] - 2026-06-30
 
 ### Fixed / 修复
@@ -36,5 +52,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Protocol documentation (`docs/protocol.md`) and frida capture archive.
   协议文档与抓包存档。
 
+[1.1.0]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.1.0
 [1.0.1]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.0.1
 [1.0.0]: https://github.com/fruityman/QK100-Keyboard-Time-Sync/releases/tag/v1.0.0

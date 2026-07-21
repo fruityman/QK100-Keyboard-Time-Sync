@@ -33,8 +33,12 @@ from tkinter import ttk, messagebox
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "time_sync_hid.py")
 CONFIG = os.path.join(HERE, "time_sync_schedule.json")
-TASK_PREFIX = "QK_TimeSync_"          # 计划任务名前缀
+TASK_PREFIX = "QK_TimeSync_"          # 每日定时任务名前缀
 LOG_PATH = os.path.join(HERE, "time_sync.log")
+
+# 开机/唤醒校时任务名 (固定, 各一个)
+TASK_BOOT = TASK_PREFIX + "OnLogon"   # 每天开机登录后触发
+TASK_WAKE = TASK_PREFIX + "OnWake"    # 从睡眠/休眠唤醒后触发
 
 
 # ----------------------------------------------------------------------------
@@ -82,10 +86,11 @@ def load_config():
                 d = json.load(f)
             d.setdefault("enabled", False)
             d.setdefault("times", [])
+            d.setdefault("boot_sync", True)   # 开机/唤醒后自动校时, 默认开
             return d
         except Exception:
             pass
-    return {"enabled": False, "times": []}
+    return {"enabled": False, "times": [], "boot_sync": True}
 
 
 def save_config(cfg):
@@ -128,6 +133,12 @@ def list_existing_tasks():
     return sorted(set(tasks))
 
 
+def list_daily_tasks():
+    """只返回每日"时间点"任务 (名称形如 QK_TimeSync_HHMM), 不含开机/唤醒任务。"""
+    return [t for t in list_existing_tasks()
+            if re.fullmatch(re.escape(TASK_PREFIX) + r"\d{4}", t)]
+
+
 def create_task(hhmm):
     """为某个 HH:MM 创建每日计划任务。返回 (ok, msg)。"""
     name = task_name_for(hhmm)
@@ -139,9 +150,37 @@ def create_task(hhmm):
     return rc == 0, out.strip()
 
 
+def create_boot_task():
+    """创建"开机/登录后校时"任务 (ONLOGON, 延迟 30 秒待设备就绪, 当天去重)。"""
+    tr = f'"{PYTHONW}" "{SCRIPT}" --quiet --source boot --once-per-day'
+    cmd = ["schtasks", "/Create", "/TN", TASK_BOOT, "/TR", tr,
+           "/SC", "ONLOGON", "/DELAY", "0000:30", "/F"]
+    rc, out = _run(cmd)
+    return rc == 0, out.strip()
+
+
+def create_wake_task():
+    """
+    创建"睡眠唤醒后校时"任务 (ONEVENT 绑定电源恢复事件, 当天去重)。
+    事件源 System / Power-Troubleshooter / EventID=1 = 系统从睡眠或休眠恢复。
+    """
+    tr = f'"{PYTHONW}" "{SCRIPT}" --quiet --source wake --once-per-day'
+    xpath = ("*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter']"
+             " and EventID=1]]")
+    cmd = ["schtasks", "/Create", "/TN", TASK_WAKE, "/TR", tr,
+           "/SC", "ONEVENT", "/EC", "System", "/MO", xpath, "/F"]
+    rc, out = _run(cmd)
+    return rc == 0, out.strip()
+
+
 def delete_task(name):
     rc, out = _run(["schtasks", "/Delete", "/TN", name, "/F"])
     return rc == 0, out.strip()
+
+
+def task_exists(name):
+    rc, _ = _run(["schtasks", "/Query", "/TN", name])
+    return rc == 0
 
 
 def delete_all_tasks():
@@ -152,25 +191,37 @@ def delete_all_tasks():
     return msgs
 
 
-def apply_schedule(enabled, times):
+def apply_schedule(enabled, times, boot_sync=True):
     """
     使系统计划任务与配置一致:
-      - 先清掉本工具所有旧任务
-      - 若 enabled, 按 times 重新创建
+      - 每日时间点任务: 先清掉旧的时间点任务, 若 enabled 按 times 重新创建
+      - 开机/唤醒任务: 按 boot_sync 创建或删除
     返回操作日志字符串列表。
     """
     logs = []
-    # 1) 清旧
-    for name in list_existing_tasks():
+    # 1) 清旧 (仅时间点任务, 不动开机/唤醒任务)
+    for name in list_daily_tasks():
         ok, m = delete_task(name)
         logs.append(f"删除旧任务 {name}: {'成功' if ok else '失败 '+m}")
-    # 2) 按需新建
+    # 2) 每日时间点任务按需新建
     if enabled:
         for hhmm in times:
             ok, m = create_task(hhmm)
             logs.append(f"创建 {hhmm}: {'成功' if ok else '失败 '+m}")
     else:
-        logs.append("自动校时已关闭, 未创建任何任务。")
+        logs.append("每日定时校时已关闭, 未创建时间点任务。")
+    # 3) 开机/唤醒校时任务
+    if boot_sync:
+        ok1, m1 = create_boot_task()
+        logs.append(f"开机校时任务: {'成功' if ok1 else '失败 '+m1}")
+        ok2, m2 = create_wake_task()
+        logs.append(f"唤醒校时任务: {'成功' if ok2 else '失败 '+m2}")
+    else:
+        for name in (TASK_BOOT, TASK_WAKE):
+            if task_exists(name):
+                ok, m = delete_task(name)
+                logs.append(f"移除 {name}: {'成功' if ok else '失败 '+m}")
+        logs.append("开机/唤醒校时已关闭。")
     return logs
 
 
@@ -178,7 +229,8 @@ def run_once_now():
     """立即静默校时一次 (测试用)。"""
     si = subprocess.STARTUPINFO()
     si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    subprocess.Popen([PYTHONW, SCRIPT, "--quiet"], startupinfo=si)
+    subprocess.Popen([PYTHONW, SCRIPT, "--quiet", "--source", "manual"],
+                     startupinfo=si)
 
 
 # 测试用的固定时间: 与当前明显不同, 便于肉眼确认屏幕是否跳变。
@@ -220,9 +272,18 @@ class App(tk.Tk):
         self.status_lbl = ttk.Label(top, text="", foreground="gray")
         self.status_lbl.pack(side="right")
 
+        # 开机/唤醒后自动校时开关 (默认开)
+        boot = ttk.Frame(self)
+        boot.grid(row=1, column=0, sticky="we", padx=10)
+        self.boot_var = tk.BooleanVar(value=self.cfg.get("boot_sync", True))
+        ttk.Checkbutton(boot,
+                        text="开机 / 睡眠唤醒后自动校时一次 (每天最多一次, 推荐)",
+                        variable=self.boot_var,
+                        command=self._on_toggle_boot).pack(side="left")
+
         # 中部: 时间点列表 + 增删
         mid = ttk.LabelFrame(self, text="每天执行的时间点 (24 小时制, 可多个 = 每天多次)")
-        mid.grid(row=1, column=0, sticky="we", **pad)
+        mid.grid(row=2, column=0, sticky="we", **pad)
 
         self.listbox = tk.Listbox(mid, height=6, width=28)
         self.listbox.grid(row=0, column=0, rowspan=4, padx=8, pady=8)
@@ -241,7 +302,7 @@ class App(tk.Tk):
 
         # 底部: 操作按钮
         bot = ttk.Frame(self)
-        bot.grid(row=2, column=0, sticky="we", **pad)
+        bot.grid(row=3, column=0, sticky="we", **pad)
         ttk.Button(bot, text="应用设置", command=self._apply).pack(side="left", padx=4)
         ttk.Button(bot, text="立即校时一次", command=self._run_now).pack(side="left", padx=4)
         ttk.Button(bot, text="测试", command=self._run_test).pack(side="left", padx=4)
@@ -251,7 +312,7 @@ class App(tk.Tk):
         # 日志/提示区
         self.log = tk.Text(self, height=8, width=58, state="disabled",
                            background="#f6f6f6")
-        self.log.grid(row=3, column=0, sticky="we", **pad)
+        self.log.grid(row=4, column=0, sticky="we", **pad)
 
         # 初始化界面
         for t in self.cfg.get("times", []):
@@ -272,7 +333,11 @@ class App(tk.Tk):
 
     # ---- 事件 ----
     def _on_toggle(self):
-        self._println(f"自动校时开关 -> {'开' if self.enabled_var.get() else '关'} "
+        self._println(f"每日定时校时 -> {'开' if self.enabled_var.get() else '关'} "
+                      f"(点『应用设置』后生效)")
+
+    def _on_toggle_boot(self):
+        self._println(f"开机/唤醒校时 -> {'开' if self.boot_var.get() else '关'} "
                       f"(点『应用设置』后生效)")
 
     def _add_time(self):
@@ -303,18 +368,19 @@ class App(tk.Tk):
 
     def _apply(self):
         enabled = self.enabled_var.get()
+        boot_sync = self.boot_var.get()
         times = self._current_times()
         if enabled and not times:
-            messagebox.showwarning("缺少时间点", "已启用自动校时,但没有任何时间点。\n"
-                                                "请先添加至少一个时间点,或关闭开关。")
+            messagebox.showwarning("缺少时间点", "已启用每日定时校时,但没有任何时间点。\n"
+                                                "请先添加至少一个时间点,或关闭该开关。")
             return
         # 保存配置
-        self.cfg = {"enabled": enabled, "times": times}
+        self.cfg = {"enabled": enabled, "times": times, "boot_sync": boot_sync}
         save_config(self.cfg)
         # 应用到计划任务
         self._println("=" * 40)
         self._println("正在应用设置到 Windows 计划任务...")
-        for line in apply_schedule(enabled, times):
+        for line in apply_schedule(enabled, times, boot_sync):
             self._println("  " + line)
         self._println("完成。")
         self._refresh_status()
@@ -355,17 +421,26 @@ class App(tk.Tk):
         self._refresh_status()
 
     def _refresh_status(self):
-        tasks = list_existing_tasks()
-        if tasks:
-            txt = f"已生效任务: {len(tasks)} 个"
+        daily = list_daily_tasks()
+        boot_on = task_exists(TASK_BOOT)
+        wake_on = task_exists(TASK_WAKE)
+        parts = []
+        if daily:
+            parts.append(f"定时 {len(daily)} 个")
+        if boot_on or wake_on:
+            parts.append("开机/唤醒")
+        if parts:
+            txt = "已生效: " + " + ".join(parts)
             color = "green"
         else:
-            txt = "当前无定时任务"
+            txt = "当前无任务"
             color = "gray"
         self.status_lbl.configure(text=txt, foreground=color)
-        self._println("当前系统计划任务: " +
-                      (", ".join(t.replace(TASK_PREFIX, "") for t in tasks)
-                       if tasks else "无"))
+        self._println(
+            "当前系统计划任务: " +
+            ("定时[" + ", ".join(t.replace(TASK_PREFIX, "") for t in daily) + "] "
+             if daily else "定时[无] ") +
+            f"开机={'开' if boot_on else '关'} 唤醒={'开' if wake_on else '关'}")
 
     def _view_log(self):
         if not os.path.exists(LOG_PATH):
